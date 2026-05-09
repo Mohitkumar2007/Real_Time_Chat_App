@@ -8,6 +8,7 @@ from .views import (
     ProfileAPIView,
     RegisterAPIView,
     TotpSetupAPIView,
+    TypingStatusAPIView,
 )
 
 urlpatterns = [
@@ -18,4 +19,5 @@ urlpatterns = [
     path("auth/password/", PasswordChangeAPIView.as_view(), name="password-change"),
     path("contacts/", ContactListCreateAPIView.as_view(), name="contact-list-create"),
     path("contacts/<str:contact_user_id>/messages/", MessageListCreateAPIView.as_view(), name="message-list-create"),
+    path("contacts/<str:contact_user_id>/typing/", TypingStatusAPIView.as_view(), name="typing-status"),
 ]

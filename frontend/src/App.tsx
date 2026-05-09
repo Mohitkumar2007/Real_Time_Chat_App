@@ -31,11 +31,13 @@ import {
   clearStoredUser,
   createContact,
   createMessage,
+  getTypingStatus,
   getStoredUser,
   listContacts,
   listMessages,
   login,
   register,
+  setTypingStatus,
   setupTotp,
   storeUser,
   updateProfile,
@@ -54,6 +56,13 @@ const passwordChecks = (value: string) => ({
 });
 
 type AuthMode = 'login' | 'register';
+type PendingAttachment = {
+  url: string;
+  type: 'image' | 'gif';
+  name: string;
+};
+
+const EMOJI_OPTIONS = ['😀', '😂', '😍', '🔥', '👍', '🙏', '🎉', '😎', '🥲', '❤️', '✅', '✨', '🙌', '🤝', '💬', '🚀'];
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(() => getStoredUser());
@@ -69,6 +78,9 @@ export default function App() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [messageInput, setMessageInput] = useState('');
+  const [selectedAttachment, setSelectedAttachment] = useState<PendingAttachment | null>(null);
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const [isContactTyping, setIsContactTyping] = useState(false);
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [newContactUserId, setNewContactUserId] = useState('');
   const [isLoadingContacts, setIsLoadingContacts] = useState(false);
@@ -85,6 +97,8 @@ export default function App() {
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const typingTimeoutRef = useRef<number | null>(null);
 
   const activeContact = contacts.find((contact) => contact.user_id === activeChatId);
   const currentMessages = activeChatId ? messages[activeChatId] ?? [] : [];
@@ -103,6 +117,9 @@ export default function App() {
     setContacts([]);
     setActiveChatId(null);
     setMessages({});
+    setSelectedAttachment(null);
+    setIsEmojiPickerOpen(false);
+    setIsContactTyping(false);
   };
 
   const loadContacts = useCallback(async (showLoading = true) => {
@@ -156,6 +173,21 @@ export default function App() {
     }
   }, [currentUser]);
 
+  const loadTypingStatus = useCallback(async (contactUserId: string) => {
+    if (!currentUser) return;
+    try {
+      const data = await getTypingStatus(contactUserId);
+      setIsContactTyping(data.is_typing);
+    } catch {
+      setIsContactTyping(false);
+    }
+  }, [currentUser]);
+
+  const updateTypingStatus = useCallback((isTyping: boolean) => {
+    if (!activeChatId || !currentUser) return;
+    setTypingStatus(activeChatId, isTyping).catch(() => undefined);
+  }, [activeChatId, currentUser]);
+
   useEffect(() => {
     const checkMobile = () => setIsMobileView(window.innerWidth < 768);
     checkMobile();
@@ -172,6 +204,10 @@ export default function App() {
   useEffect(() => {
     if (!activeChatId || !currentUser) return;
     loadMessagesForContact(activeChatId);
+    loadTypingStatus(activeChatId);
+    setSelectedAttachment(null);
+    setIsEmojiPickerOpen(false);
+    setIsContactTyping(false);
   }, [activeChatId, currentUser?.token, loadMessagesForContact]);
 
   useEffect(() => {
@@ -189,16 +225,24 @@ export default function App() {
 
     const interval = window.setInterval(() => {
       loadMessagesForContact(activeChatId, false);
+      loadTypingStatus(activeChatId);
     }, 1500);
 
     return () => window.clearInterval(interval);
-  }, [activeChatId, currentUser?.token, loadMessagesForContact]);
+  }, [activeChatId, currentUser?.token, loadMessagesForContact, loadTypingStatus]);
+
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
+      updateTypingStatus(false);
+    };
+  }, [updateTypingStatus]);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [activeChatId, messages]);
+  }, [activeChatId, messages, isContactTyping]);
 
   const handleAuth = async (event: FormEvent) => {
     event.preventDefault();
@@ -387,28 +431,77 @@ export default function App() {
     }
   };
 
+  const handleMessageInputChange = (value: string) => {
+    setMessageInput(value);
+    updateTypingStatus(value.trim().length > 0);
+    if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = window.setTimeout(() => updateTypingStatus(false), 1400);
+  };
+
+  const insertEmoji = (emoji: string) => {
+    handleMessageInputChange(`${messageInput}${emoji}`);
+    setIsEmojiPickerOpen(false);
+  };
+
+  const handleAttachmentChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setError('Please choose an image or GIF file.');
+      return;
+    }
+    if (file.size > 2_500_000) {
+      setError('Please choose an image or GIF smaller than 2.5 MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setSelectedAttachment({
+        url: String(reader.result),
+        type: file.type === 'image/gif' ? 'gif' : 'image',
+        name: file.name,
+      });
+      setError(null);
+    };
+    reader.onerror = () => setError('Unable to read that file. Please try another image or GIF.');
+    reader.readAsDataURL(file);
+  };
+
   const handleSendMessage = async () => {
-    if (!messageInput.trim() || !activeChatId) return;
+    if ((!messageInput.trim() && !selectedAttachment) || !activeChatId) return;
 
     const text = messageInput.trim();
+    const attachment = selectedAttachment;
     setMessageInput('');
+    setSelectedAttachment(null);
+    setIsEmojiPickerOpen(false);
+    updateTypingStatus(false);
     setError(null);
 
     try {
-      const savedMessage = await createMessage(activeChatId, {text});
+      const savedMessage = await createMessage(activeChatId, {
+        text,
+        attachment_url: attachment?.url,
+        attachment_type: attachment?.type,
+        attachment_name: attachment?.name,
+      });
       setMessages((prev) => ({
         ...prev,
         [activeChatId]: [...(prev[activeChatId] ?? []), savedMessage],
       }));
+      const lastMessage = savedMessage.text || (savedMessage.attachment_type === 'gif' ? 'GIF' : 'Image');
       setContacts((prev) =>
         prev.map((contact) =>
           contact.user_id === activeChatId
-            ? {...contact, last_message: savedMessage.text, last_message_at: savedMessage.created_at}
+            ? {...contact, last_message: lastMessage, last_message_at: savedMessage.created_at}
             : contact,
         ),
       );
     } catch (err) {
       setMessageInput(text);
+      setSelectedAttachment(attachment);
       setError(err instanceof Error ? err.message : 'Unable to send message.');
     }
   };
@@ -668,7 +761,9 @@ export default function App() {
                   </div>
                   <div className="min-w-0">
                     <h3 className="truncate text-slate-950 font-semibold text-sm leading-tight">{activeContact.name}</h3>
-                    <p className="text-emerald-600 text-[11px] font-medium">@{activeContact.user_id} - active chat</p>
+                    <p className="text-emerald-600 text-[11px] font-medium">
+                      {isContactTyping ? 'typing...' : `@${activeContact.user_id} - active chat`}
+                    </p>
                   </div>
                 </div>
                 <div className="flex shrink-0 gap-2 text-slate-500 sm:gap-6">
@@ -700,7 +795,12 @@ export default function App() {
                         className={`flex gap-3 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}
                       >
                         <div className={`max-w-[86%] min-w-[86px] rounded-2xl border p-3 shadow-sm backdrop-blur-xl sm:max-w-[78%] sm:p-4 ${isMine ? 'border-teal-400/50 bg-gradient-to-br from-teal-600 to-sky-700 rounded-tr-md text-white' : 'bg-white/78 border-white/70 rounded-tl-md text-slate-900'}`}>
-                          <p className="break-words text-sm leading-relaxed">{msg.text}</p>
+                          {msg.attachment_url && (
+                            <a href={msg.attachment_url} target="_blank" rel="noreferrer" className="mb-2 block overflow-hidden rounded-xl border border-white/30 bg-black/5">
+                              <img src={msg.attachment_url} alt={msg.attachment_name || 'Chat attachment'} className="max-h-72 w-full min-w-48 object-cover" />
+                            </a>
+                          )}
+                          {msg.text && <p className="break-words text-sm leading-relaxed">{msg.text}</p>}
                           <div className={`mt-2 flex items-center gap-1.5 ${isMine ? 'justify-end' : 'justify-start'}`}>
                             <span className={`text-[9px] ${isMine ? 'text-white/55' : 'text-slate-400'}`}>
                               {formatTime(msg.created_at)}
@@ -723,26 +823,85 @@ export default function App() {
                     Send the first message to {activeContact.name}.
                   </div>
                 )}
+
+                {isContactTyping && (
+                  <motion.div
+                    initial={{opacity: 0, y: 8}}
+                    animate={{opacity: 1, y: 0}}
+                    className="flex items-center gap-2"
+                  >
+                    <div className="rounded-2xl rounded-tl-md border border-white/70 bg-white/78 px-4 py-3 shadow-sm backdrop-blur-xl">
+                      <div className="typing-dots flex items-center gap-1.5">
+                        <span />
+                        <span />
+                        <span />
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
               </div>
 
               <footer className="glass-footer shrink-0 border-t p-3 sm:p-5">
-                <div className="glass-field flex items-center gap-2 rounded-2xl px-3 py-2.5 shadow-sm sm:gap-3 sm:px-4 sm:py-3">
-                  <button className="hidden text-slate-500 transition-colors hover:text-slate-900 min-[380px]:block">
+                {selectedAttachment && (
+                  <div className="mb-3 flex items-center gap-3 rounded-2xl border border-white/50 bg-white/60 p-2 shadow-sm backdrop-blur-xl">
+                    <img src={selectedAttachment.url} alt={selectedAttachment.name} className="h-14 w-14 rounded-xl object-cover" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-900">{selectedAttachment.name}</p>
+                      <p className="text-xs text-slate-500">{selectedAttachment.type === 'gif' ? 'GIF ready to send' : 'Image ready to send'}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAttachment(null)}
+                      className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-white hover:text-slate-900"
+                      title="Remove attachment"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                )}
+                <div className="glass-field relative flex items-center gap-2 rounded-2xl px-3 py-2.5 shadow-sm sm:gap-3 sm:px-4 sm:py-3">
+                  {isEmojiPickerOpen && (
+                    <div className="absolute bottom-[calc(100%+10px)] left-2 grid w-64 grid-cols-8 gap-1 rounded-2xl border border-white/60 bg-white/90 p-3 shadow-2xl backdrop-blur-xl sm:left-4">
+                      {EMOJI_OPTIONS.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => insertEmoji(emoji)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-lg transition hover:bg-slate-100"
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsEmojiPickerOpen((value) => !value)}
+                    className="text-slate-500 transition-colors hover:text-slate-900"
+                    title="Add emoji"
+                  >
                     <Smile size={22} />
                   </button>
-                  <button className="hidden text-slate-500 transition-colors hover:text-slate-900 min-[380px]:block">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="text-slate-500 transition-colors hover:text-slate-900"
+                    title="Attach image or GIF"
+                  >
                     <Paperclip size={22} className="-rotate-45" />
                   </button>
+                  <input ref={fileInputRef} type="file" accept="image/*,.gif" onChange={handleAttachmentChange} className="hidden" />
                   <input
                     type="text"
                     placeholder="Type your message..."
                     className="flex-1 bg-transparent border-none text-slate-900 focus:ring-0 placeholder-slate-400 text-sm outline-none"
                     value={messageInput}
-                    onChange={(event) => setMessageInput(event.target.value)}
+                    onChange={(event) => handleMessageInputChange(event.target.value)}
                     onKeyDown={(event) => event.key === 'Enter' && handleSendMessage()}
                   />
-                  {messageInput.trim() ? (
+                  {messageInput.trim() || selectedAttachment ? (
                     <motion.button
+                      type="button"
                       whileHover={{scale: 1.05}}
                       whileTap={{scale: 0.95}}
                       onClick={handleSendMessage}
@@ -751,7 +910,7 @@ export default function App() {
                       <Send size={18} />
                     </motion.button>
                   ) : (
-                    <button className="shrink-0 text-slate-500 transition-colors hover:text-slate-900">
+                    <button type="button" className="shrink-0 text-slate-500 transition-colors hover:text-slate-900">
                       <Mic size={22} />
                     </button>
                   )}

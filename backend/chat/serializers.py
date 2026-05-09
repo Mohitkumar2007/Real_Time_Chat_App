@@ -143,13 +143,42 @@ class MessageSerializer(serializers.Serializer):
     conversation_id = serializers.CharField(read_only=True)
     text = serializers.CharField(
         max_length=2000,
+        required=False,
+        allow_blank=True,
         error_messages={
             "blank": "Please enter a message.",
             "max_length": "Message is too long.",
             "required": "Please enter a message.",
         },
     )
+    attachment_url = serializers.CharField(required=False, allow_blank=True, max_length=3500000)
+    attachment_type = serializers.ChoiceField(choices=["image", "gif"], required=False, allow_blank=True)
+    attachment_name = serializers.CharField(required=False, allow_blank=True, max_length=180)
     sender_user_id = serializers.CharField(read_only=True)
     recipient_user_id = serializers.CharField(read_only=True)
     status = serializers.ChoiceField(choices=["sent", "delivered", "read"], default="sent")
     created_at = serializers.CharField(read_only=True)
+
+    def validate(self, attrs):
+        text = attrs.get("text", "").strip()
+        attachment_url = attrs.get("attachment_url", "")
+        attachment_type = attrs.get("attachment_type", "")
+        if not text and not attachment_url:
+            raise serializers.ValidationError("Enter a message or attach an image.")
+        if attachment_url:
+            if not attachment_url.startswith("data:image/"):
+                raise serializers.ValidationError("Please attach a valid image or GIF.")
+            if attachment_type not in {"image", "gif"}:
+                raise serializers.ValidationError("Please attach a valid image or GIF.")
+            if attachment_type == "gif" and not attachment_url.startswith("data:image/gif"):
+                raise serializers.ValidationError("Selected file must be a GIF.")
+        attrs["text"] = text
+        return attrs
+
+
+class TypingStatusSerializer(serializers.Serializer):
+    is_typing = serializers.BooleanField()
+
+
+class TypingStatusResponseSerializer(serializers.Serializer):
+    is_typing = serializers.BooleanField(read_only=True)

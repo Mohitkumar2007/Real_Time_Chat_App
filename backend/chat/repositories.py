@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import secrets
 from typing import Any
 
@@ -195,15 +195,63 @@ class MessageRepository:
         now = datetime.now(timezone.utc).isoformat()
         document = {
             "conversation_id": conversation_id_for(sender_user_id, recipient_user_id),
-            "text": payload["text"],
+            "text": payload.get("text", ""),
             "sender_user_id": normalize_user_id(sender_user_id),
             "recipient_user_id": normalize_user_id(recipient_user_id),
             "status": "sent",
             "created_at": now,
         }
+        if payload.get("attachment_url"):
+            document["attachment_url"] = payload["attachment_url"]
+            document["attachment_type"] = payload.get("attachment_type", "image")
+            document["attachment_name"] = payload.get("attachment_name", "")
         result = self.collection.insert_one(document)
         document["_id"] = result.inserted_id
         return serialize_document(document)
+
+    def clear_all(self) -> None:
+        self.collection.delete_many({})
+
+
+class TypingRepository:
+    collection_name = "typing_status"
+
+    def __init__(self):
+        self.collection = get_database()[self.collection_name]
+        self.collection.create_index([("conversation_id", 1), ("sender_user_id", 1)], unique=True)
+
+    def set_status(self, sender_user_id: str, recipient_user_id: str, is_typing: bool) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self.collection.update_one(
+            {
+                "conversation_id": conversation_id_for(sender_user_id, recipient_user_id),
+                "sender_user_id": normalize_user_id(sender_user_id),
+            },
+            {
+                "$set": {
+                    "conversation_id": conversation_id_for(sender_user_id, recipient_user_id),
+                    "sender_user_id": normalize_user_id(sender_user_id),
+                    "recipient_user_id": normalize_user_id(recipient_user_id),
+                    "is_typing": is_typing,
+                    "updated_at": now,
+                }
+            },
+            upsert=True,
+        )
+
+    def is_typing(self, sender_user_id: str, recipient_user_id: str) -> bool:
+        status = self.collection.find_one(
+            {
+                "conversation_id": conversation_id_for(sender_user_id, recipient_user_id),
+                "sender_user_id": normalize_user_id(sender_user_id),
+                "recipient_user_id": normalize_user_id(recipient_user_id),
+                "is_typing": True,
+            }
+        )
+        if not status:
+            return False
+        updated_at = datetime.fromisoformat(status["updated_at"])
+        return updated_at >= datetime.now(timezone.utc) - timedelta(seconds=6)
 
     def clear_all(self) -> None:
         self.collection.delete_many({})

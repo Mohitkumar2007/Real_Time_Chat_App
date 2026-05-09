@@ -11,6 +11,8 @@ from .serializers import (
     ProfileUpdateSerializer,
     TotpSetupResponseSerializer,
     TotpSetupSerializer,
+    TypingStatusResponseSerializer,
+    TypingStatusSerializer,
     UserSerializer,
 )
 from .services import ChatService
@@ -90,5 +92,21 @@ class MessageListCreateAPIView(APIView):
         current_user = service.authenticate_request(request)
         message = service.create_message(current_user, contact_user_id, serializer.validated_data)
         return Response(MessageSerializer(message).data, status=status.HTTP_201_CREATED)
+
+
+class TypingStatusAPIView(APIView):
+    def get(self, request, contact_user_id: str):
+        service = ChatService()
+        current_user = service.authenticate_request(request)
+        result = service.get_typing_status(current_user, contact_user_id)
+        return Response(TypingStatusResponseSerializer(result).data)
+
+    def post(self, request, contact_user_id: str):
+        serializer = TypingStatusSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        service = ChatService()
+        current_user = service.authenticate_request(request)
+        result = service.set_typing_status(current_user, contact_user_id, serializer.validated_data)
+        return Response(TypingStatusResponseSerializer(result).data)
 
 # Create your views here.

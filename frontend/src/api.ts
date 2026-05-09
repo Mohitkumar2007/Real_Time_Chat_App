@@ -13,6 +13,9 @@ export interface Message {
   id: string;
   conversation_id: string;
   text: string;
+  attachment_url?: string;
+  attachment_type?: 'image' | 'gif';
+  attachment_name?: string;
   sender_user_id: string;
   recipient_user_id: string;
   status: 'sent' | 'delivered' | 'read';
@@ -145,13 +148,28 @@ export function listMessages(contactUserId: string) {
   return authenticatedRequest<Message[]>(`/chat/contacts/${contactUserId}/messages/`, user.token);
 }
 
-export function createMessage(contactUserId: string, payload: {text: string}) {
+export function createMessage(contactUserId: string, payload: {text?: string; attachment_url?: string; attachment_type?: 'image' | 'gif'; attachment_name?: string}) {
   const user = getStoredUser();
   if (!user) throw new Error('Login required.');
   return authenticatedRequest<Message>(`/chat/contacts/${contactUserId}/messages/`, user.token, {
     method: 'POST',
     body: JSON.stringify({status: 'sent', ...payload}),
   });
+}
+
+export function setTypingStatus(contactUserId: string, isTyping: boolean) {
+  const user = getStoredUser();
+  if (!user) throw new Error('Login required.');
+  return authenticatedRequest<{is_typing: boolean}>(`/chat/contacts/${contactUserId}/typing/`, user.token, {
+    method: 'POST',
+    body: JSON.stringify({is_typing: isTyping}),
+  });
+}
+
+export function getTypingStatus(contactUserId: string) {
+  const user = getStoredUser();
+  if (!user) throw new Error('Login required.');
+  return authenticatedRequest<{is_typing: boolean}>(`/chat/contacts/${contactUserId}/typing/`, user.token);
 }
 
 export function getStoredUser() {

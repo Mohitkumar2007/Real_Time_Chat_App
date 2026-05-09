@@ -1,6 +1,6 @@
 from rest_framework.exceptions import AuthenticationFailed, NotFound, PermissionDenied, ValidationError
 
-from .repositories import ContactRepository, MessageRepository, UserRepository, normalize_user_id
+from .repositories import ContactRepository, MessageRepository, TypingRepository, UserRepository, normalize_user_id
 from .totp import generate_totp_secret, totp_uri, verify_totp
 
 
@@ -9,6 +9,7 @@ class ChatService:
         self.users = UserRepository()
         self.contacts = ContactRepository()
         self.messages = MessageRepository()
+        self.typing = TypingRepository()
 
     def setup_totp(self, payload):
         user_id = normalize_user_id(payload["user_id"])
@@ -95,9 +96,24 @@ class ChatService:
         self.contacts.create(current_user["user_id"], contact_user)
         self.contacts.create(contact_user["user_id"], current_user)
         message = self.messages.create(current_user["user_id"], contact_user["user_id"], payload)
-        self.contacts.update_last_message(current_user["user_id"], contact_user["user_id"], message["text"], message["created_at"])
-        self.contacts.update_last_message(contact_user["user_id"], current_user["user_id"], message["text"], message["created_at"])
+        self.typing.set_status(current_user["user_id"], contact_user["user_id"], False)
+        last_message = message["text"] or ("GIF" if message.get("attachment_type") == "gif" else "Image")
+        self.contacts.update_last_message(current_user["user_id"], contact_user["user_id"], last_message, message["created_at"])
+        self.contacts.update_last_message(contact_user["user_id"], current_user["user_id"], last_message, message["created_at"])
         return message
+
+    def set_typing_status(self, current_user, contact_user_id: str, payload):
+        contact_user = self.users.get_by_user_id(contact_user_id)
+        if not contact_user:
+            raise NotFound("Contact not found.")
+        self.typing.set_status(current_user["user_id"], contact_user["user_id"], payload["is_typing"])
+        return {"is_typing": payload["is_typing"]}
+
+    def get_typing_status(self, current_user, contact_user_id: str):
+        contact_user = self.users.get_by_user_id(contact_user_id)
+        if not contact_user:
+            raise NotFound("Contact not found.")
+        return {"is_typing": self.typing.is_typing(contact_user["user_id"], current_user["user_id"])}
 
     def _public_user(self, user):
         return {
