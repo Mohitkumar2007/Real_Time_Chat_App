@@ -11,6 +11,7 @@ import {
   Phone,
   Plus,
   RefreshCw,
+  Reply,
   Search,
   Send,
   Settings,
@@ -64,6 +65,8 @@ type PendingAttachment = {
 
 const EMOJI_OPTIONS = ['😀', '😂', '😍', '🔥', '👍', '🙏', '🎉', '😎', '🥲', '❤️', '✅', '✨', '🙌', '🤝', '💬', '🚀'];
 
+const summarizeMessage = (message: Message) => message.text || (message.attachment_type === 'gif' ? 'GIF' : 'Image');
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(() => getStoredUser());
   const [authMode, setAuthMode] = useState<AuthMode>('login');
@@ -79,6 +82,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [messageInput, setMessageInput] = useState('');
   const [selectedAttachment, setSelectedAttachment] = useState<PendingAttachment | null>(null);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [isContactTyping, setIsContactTyping] = useState(false);
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
@@ -118,6 +122,7 @@ export default function App() {
     setActiveChatId(null);
     setMessages({});
     setSelectedAttachment(null);
+    setReplyingTo(null);
     setIsEmojiPickerOpen(false);
     setIsContactTyping(false);
   };
@@ -206,6 +211,7 @@ export default function App() {
     loadMessagesForContact(activeChatId);
     loadTypingStatus(activeChatId);
     setSelectedAttachment(null);
+    setReplyingTo(null);
     setIsEmojiPickerOpen(false);
     setIsContactTyping(false);
   }, [activeChatId, currentUser?.token, loadMessagesForContact]);
@@ -474,8 +480,10 @@ export default function App() {
 
     const text = messageInput.trim();
     const attachment = selectedAttachment;
+    const replyMessage = replyingTo;
     setMessageInput('');
     setSelectedAttachment(null);
+    setReplyingTo(null);
     setIsEmojiPickerOpen(false);
     updateTypingStatus(false);
     setError(null);
@@ -486,6 +494,7 @@ export default function App() {
         attachment_url: attachment?.url,
         attachment_type: attachment?.type,
         attachment_name: attachment?.name,
+        reply_to_message_id: replyMessage?.id,
       });
       setMessages((prev) => ({
         ...prev,
@@ -502,6 +511,7 @@ export default function App() {
     } catch (err) {
       setMessageInput(text);
       setSelectedAttachment(attachment);
+      setReplyingTo(replyMessage);
       setError(err instanceof Error ? err.message : 'Unable to send message.');
     }
   };
@@ -795,6 +805,14 @@ export default function App() {
                         className={`flex gap-3 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}
                       >
                         <div className={`max-w-[86%] min-w-[86px] rounded-2xl border p-3 shadow-sm backdrop-blur-xl sm:max-w-[78%] sm:p-4 ${isMine ? 'border-teal-400/50 bg-gradient-to-br from-teal-600 to-sky-700 rounded-tr-md text-white' : 'bg-white/78 border-white/70 rounded-tl-md text-slate-900'}`}>
+                          {msg.reply_to_message_id && (
+                            <div className={`mb-2 rounded-xl border-l-4 px-3 py-2 text-xs ${isMine ? 'border-cyan-200 bg-white/15 text-white/80' : 'border-teal-500 bg-slate-100/80 text-slate-600'}`}>
+                              <p className="font-semibold">
+                                {msg.reply_to_sender_user_id?.toLowerCase() === currentUser.user_id.toLowerCase() ? 'You' : activeContact.name}
+                              </p>
+                              <p className="line-clamp-2 break-words">{msg.reply_to_text || 'Message'}</p>
+                            </div>
+                          )}
                           {msg.attachment_url && (
                             <a href={msg.attachment_url} target="_blank" rel="noreferrer" className="mb-2 block overflow-hidden rounded-xl border border-white/30 bg-black/5">
                               <img src={msg.attachment_url} alt={msg.attachment_name || 'Chat attachment'} className="max-h-72 w-full min-w-48 object-cover" />
@@ -813,6 +831,14 @@ export default function App() {
                               ))}
                           </div>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => setReplyingTo(msg)}
+                          className={`mt-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-slate-500 opacity-70 transition hover:bg-white hover:opacity-100 ${isMine ? 'order-first' : ''}`}
+                          title="Reply"
+                        >
+                          <Reply size={14} />
+                        </button>
                       </motion.div>
                     );
                   })}
@@ -842,6 +868,24 @@ export default function App() {
               </div>
 
               <footer className="glass-footer shrink-0 border-t p-3 sm:p-5">
+                {replyingTo && (
+                  <div className="mb-3 flex items-center gap-3 rounded-2xl border border-white/50 bg-white/70 p-3 shadow-sm backdrop-blur-xl">
+                    <div className="min-w-0 flex-1 border-l-4 border-teal-500 pl-3">
+                      <p className="text-xs font-semibold text-teal-700">
+                        Replying to {replyingTo.sender_user_id.toLowerCase() === currentUser.user_id.toLowerCase() ? 'yourself' : activeContact.name}
+                      </p>
+                      <p className="truncate text-sm text-slate-700">{summarizeMessage(replyingTo)}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReplyingTo(null)}
+                      className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-white hover:text-slate-900"
+                      title="Cancel reply"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                )}
                 {selectedAttachment && (
                   <div className="mb-3 flex items-center gap-3 rounded-2xl border border-white/50 bg-white/60 p-2 shadow-sm backdrop-blur-xl">
                     <img src={selectedAttachment.url} alt={selectedAttachment.name} className="h-14 w-14 rounded-xl object-cover" />

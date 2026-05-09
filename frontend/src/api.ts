@@ -16,6 +16,9 @@ export interface Message {
   attachment_url?: string;
   attachment_type?: 'image' | 'gif';
   attachment_name?: string;
+  reply_to_message_id?: string;
+  reply_to_text?: string;
+  reply_to_sender_user_id?: string;
   sender_user_id: string;
   recipient_user_id: string;
   status: 'sent' | 'delivered' | 'read';
@@ -148,7 +151,7 @@ export function listMessages(contactUserId: string) {
   return authenticatedRequest<Message[]>(`/chat/contacts/${contactUserId}/messages/`, user.token);
 }
 
-export function createMessage(contactUserId: string, payload: {text?: string; attachment_url?: string; attachment_type?: 'image' | 'gif'; attachment_name?: string}) {
+export function createMessage(contactUserId: string, payload: {text?: string; attachment_url?: string; attachment_type?: 'image' | 'gif'; attachment_name?: string; reply_to_message_id?: string}) {
   const user = getStoredUser();
   if (!user) throw new Error('Login required.');
   return authenticatedRequest<Message>(`/chat/contacts/${contactUserId}/messages/`, user.token, {

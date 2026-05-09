@@ -4,6 +4,16 @@ React/Vite frontend for ByteTalk.
 
 The UI uses a glass-style visual system, local QR generation for TOTP setup, and a Vite `/api` proxy to the Django backend.
 
+## Chat Features
+
+- Emoji picker in the composer
+- Image and GIF attachment preview before sending
+- Media rendering inside message bubbles
+- Reply button on each message with a quoted preview in the composer
+- Typing animation when the other user is composing
+- Auto-refresh for contacts, messages, read receipts, and typing status
+- Mobile-friendly sidebar/chat layout
+
 ## Setup
 
 From the project root:

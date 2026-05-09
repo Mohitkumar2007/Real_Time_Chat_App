@@ -2,6 +2,8 @@
 
 Django REST API backed by MongoDB through PyMongo.
 
+It supports username-based private chat, read receipts, image/GIF messages, reply metadata, typing status, profile updates, and TOTP authentication.
+
 ## Setup
 
 From the project root:
@@ -74,6 +76,15 @@ Accounts require:
 - TOTP secret setup
 - 6-digit TOTP code during registration and login
 
+## Chat Data
+
+MongoDB stores users, contacts, messages, and typing status. Messages may include:
+
+- text
+- optional image/GIF attachment data URL
+- optional reply reference and reply preview
+- sender, recipient, status, and timestamp
+
 ## Endpoints
 
 - `GET /api/health/`
@@ -86,3 +97,5 @@ Accounts require:
 - `POST /api/chat/contacts/`
 - `GET /api/chat/contacts/<username>/messages/`
 - `POST /api/chat/contacts/<username>/messages/`
+- `GET /api/chat/contacts/<username>/typing/`
+- `POST /api/chat/contacts/<username>/typing/`

@@ -181,6 +181,17 @@ class MessageRepository:
         ).sort("created_at", 1)
         return [serialize_document(message) for message in messages]
 
+    def get_for_conversation(self, message_id: str, first_user_id: str, second_user_id: str) -> dict[str, Any] | None:
+        if not ObjectId.is_valid(message_id):
+            return None
+        message = self.collection.find_one(
+            {
+                "_id": ObjectId(message_id),
+                "conversation_id": conversation_id_for(first_user_id, second_user_id),
+            }
+        )
+        return serialize_document(message) if message else None
+
     def mark_read_for_recipient(self, first_user_id: str, second_user_id: str, recipient_user_id: str) -> None:
         self.collection.update_many(
             {
@@ -205,6 +216,10 @@ class MessageRepository:
             document["attachment_url"] = payload["attachment_url"]
             document["attachment_type"] = payload.get("attachment_type", "image")
             document["attachment_name"] = payload.get("attachment_name", "")
+        if payload.get("reply_to_message_id"):
+            document["reply_to_message_id"] = payload["reply_to_message_id"]
+            document["reply_to_text"] = payload.get("reply_to_text", "")
+            document["reply_to_sender_user_id"] = normalize_user_id(payload.get("reply_to_sender_user_id", ""))
         result = self.collection.insert_one(document)
         document["_id"] = result.inserted_id
         return serialize_document(document)

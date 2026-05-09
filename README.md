@@ -1,6 +1,6 @@
 # ByteTalk
 
-Modern full-stack chat app with TOTP authentication, strong passwords, profile settings, read receipts, and a glass-style React interface.
+Modern full-stack chat app with TOTP authentication, strong passwords, profile settings, read receipts, image/GIF messaging, WhatsApp-style replies, typing indicators, and a glass-style React interface.
 
 ByteTalk uses a React/Vite frontend and a Django REST backend. Chat data, users, contacts, messages, profile data, and TOTP secrets are stored in MongoDB.
 
@@ -13,6 +13,10 @@ ByteTalk uses a React/Vite frontend and a Django REST backend. Chat data, users,
 - Profile settings with display name, password change, and profile photo upload
 - Add contacts by username
 - User-to-user chat history
+- Emoji picker in the message composer
+- Image and GIF attachments in chat messages
+- Reply to a specific message with an inline quoted preview
+- Typing indicator while the other user is composing a message
 - Auto-refresh for incoming messages
 - Read receipts with single/double ticks
 - Modern glass UI with mobile-friendly layout
@@ -108,6 +112,16 @@ On macOS, enter the URI used by your MongoDB install, such as a local Homebrew M
 
 Login requires username, password, and the 6-digit TOTP code.
 
+## Chat Flow
+
+1. Add another account by username.
+2. Open the contact from the sidebar.
+3. Send text, emojis, images, or GIFs from the composer.
+4. Click the reply icon beside any message to quote it in your next message.
+5. Incoming messages, read receipts, and typing indicators refresh automatically while the chat is open.
+
+Images and GIFs are currently stored as base64 data URLs in MongoDB. The frontend limits each attachment to 2.5 MB.
+
 ## Development Checks
 
 Backend:
@@ -173,3 +187,5 @@ MIT
 - `POST /api/chat/contacts/`
 - `GET /api/chat/contacts/<username>/messages/`
 - `POST /api/chat/contacts/<username>/messages/`
+- `GET /api/chat/contacts/<username>/typing/`
+- `POST /api/chat/contacts/<username>/typing/`

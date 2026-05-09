@@ -95,6 +95,18 @@ class ChatService:
             raise NotFound("Contact not found.")
         self.contacts.create(current_user["user_id"], contact_user)
         self.contacts.create(contact_user["user_id"], current_user)
+        if payload.get("reply_to_message_id"):
+            replied_message = self.messages.get_for_conversation(
+                payload["reply_to_message_id"],
+                current_user["user_id"],
+                contact_user["user_id"],
+            )
+            if not replied_message:
+                raise NotFound("Original message not found.")
+            payload["reply_to_text"] = replied_message.get("text") or (
+                "GIF" if replied_message.get("attachment_type") == "gif" else "Image"
+            )
+            payload["reply_to_sender_user_id"] = replied_message["sender_user_id"]
         message = self.messages.create(current_user["user_id"], contact_user["user_id"], payload)
         self.typing.set_status(current_user["user_id"], contact_user["user_id"], False)
         last_message = message["text"] or ("GIF" if message.get("attachment_type") == "gif" else "Image")
